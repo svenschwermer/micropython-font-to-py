@@ -1,4 +1,6 @@
 from argparse import ArgumentParser
+import os
+import sys
 
 from font_to_py import MINCHAR, MAXCHAR
 from font_to_py import Bitmap as BitmapBase
@@ -35,23 +37,22 @@ class Font(FontBase):
 
 
 OUT = '''\
-_font_file = "{}.bin"
-_char_set = [{}]
-_char_end = [{}]
+_char_set = {char_set}
 
-width = {}
-height = {}
+height = {font_height}
 
-with open(_font_file, 'rb') as f:
+with open("{font_bin}.bin", "rb") as f:
     _font_bin = f.read()
 
 def get_ch(ch):
-    if ch not in _char_set:
-        ch = "?"
-    i = _char_set.index(ch)
-    start = _char_end[i-1] if i > 0 else 0
-    end = _char_end[i]
-    return _font_bin[start:end]
+    c = _char_set.get(ch, _char_set["?"])
+    return (_font_bin[c[0]:c[1]], c[2])
+
+def str_width(s):
+    w = 0
+    for c in s:
+        w += _char_set.get(c, _char_set["?"])[2]
+    return w
 '''
 
 
@@ -63,18 +64,17 @@ if __name__ == '__main__':
     parser.add_argument('outfile', type=str, help='Path and name of output files, {{.bin,.py}} is appended')
     args = parser.parse_args()
 
-    fnt = Font(args.infile, args.height, MINCHAR, MAXCHAR, True, 63, args.charset, False)
+    fnt = Font(args.infile, args.height, MINCHAR, MAXCHAR, False, 63, args.charset, False)
 
     with open(args.outfile + '.bin', 'wb') as f:
-        char_set = []
-        char_end = []
+        char_set = {}
         for char, char_params in fnt.items():
-            char_set.append(char)
-            bitmap = char_params[0]
-            f.write(bytes(bitmap.get_hybrid()))
-            char_end.append(f.tell())
+            start = f.tell()
+            bmp = char_params[0]
+            f.write(bytes(bmp.get_hybrid()))
+            char_set[char] = (start, f.tell(), bmp.width)
     with open(args.outfile + '.py', 'wt') as f:
-        f.write(OUT.format(args.outfile,
-                           ', '.join([f'"{c}"' for c in char_set]),
-                           ', '.join([str(i) for i in char_end]),
-                           fnt.width, fnt.height))
+        f.write('# ' + ' '.join(sys.argv) + '\n')
+        f.write(OUT.format(char_set=char_set,
+                           font_height=fnt.height,
+                           font_bin=os.path.basename(args.outfile)))
